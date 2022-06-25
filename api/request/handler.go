@@ -8,6 +8,6 @@ type Handler interface {
 	ordered.PriorityOrdered
 	Method() string
 	Path() string
-	Supports(hctx Context) bool
-	Handle(hctx Context)
+	Supports(rctx *Context) bool
+	Handle(rctx *Context)
 }

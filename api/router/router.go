@@ -1,93 +1,68 @@
 package router
 
 import (
-	"sort"
-	"sync"
-
+	"github.com/photowey/fastrouter/api/apiconstant"
+	"github.com/photowey/fastrouter/api/dispatcher"
+	"github.com/photowey/fastrouter/api/filter"
+	"github.com/photowey/fastrouter/api/interceptor"
 	"github.com/photowey/fastrouter/api/request"
-	perrors "github.com/pkg/errors"
+	"github.com/valyala/fasthttp"
 )
 
 var (
-	_       IRouter = (*Router)(nil)
-	_router *Router
-	_lock   sync.Mutex
+	_       Router = (*router)(nil)
+	_router *router
 )
 
 func init() {
 	_router = newRouter()
 }
 
-type IRouter interface {
-	Register(method, path string, handler request.Handler) error
-	Handlers() []request.Handler
-	Dispatch(hctx request.Context) error
+type Router interface {
+	route(rctx *request.Context, ctx *fasthttp.RequestCtx) error
+}
+type router struct {
+	handler dispatcher.Handler
 }
 
-type Router struct {
-	HandlerMapping  map[string]request.Handler // handler mapping
-	RequestHandlers []request.Handler          // request handlers
+func (r *router) route(rctx *request.Context, ctx *fasthttp.RequestCtx) error {
+	return _router.handler.Route(rctx, ctx)
 }
 
-func (r *Router) Register(method, path string, handler request.Handler) error {
-	// TODO validate?
-	requestMapping := BuildMapping(method, path)
-	r.HandlerMapping[requestMapping] = handler
-
-	return nil
+func Register(method, path string, handler request.Handler) {
+	_router.handler.Register(method, path, handler)
 }
 
-func (r *Router) Handlers() []request.Handler {
-	if len(_router.RequestHandlers) == 0 {
-		_lock.Lock()
-		defer _lock.Unlock()
-		if len(_router.RequestHandlers) == 0 {
-			r.initRhs()
-		}
-	}
-
-	return r.RequestHandlers
+func UnRegister(method, path string, handler request.Handler) error {
+	return _router.handler.UnRegister(method, path, handler)
 }
 
-func (r *Router) initRhs() {
-	hs := make([]request.Handler, 0)
-	for _, handler := range r.HandlerMapping {
-		hs = append(hs, handler)
-	}
-	sort.SliceStable(hs, func(i, j int) bool {
-		return hs[i].Order() < hs[j].Order()
-	})
-
-	r.RequestHandlers = hs
+func RegisterFilter(name string, filterx filter.Filter) {
+	_router.handler.RegisterFilter(name, filterx)
 }
 
-func (r *Router) Dispatch(hctx request.Context) error {
-	handlers := r.Handlers()
-	for _, handler := range handlers {
-		if handler.Supports(hctx) {
-			handler.Handle(hctx)
-			return nil
-		}
-	}
-
-	return perrors.Errorf("router: Dispatch, handler mapping not found: %s", hctx.BuildMapping())
+func UnRegisterFilter(name string, filterx filter.Filter) error {
+	return _router.handler.UnRegisterFilter(name, filterx)
 }
 
-func NewRouter() IRouter {
-	if _router == nil {
-		_lock.Lock()
-		defer _lock.Unlock()
-		if _router == nil {
-			_router = newRouter()
-		}
-	}
-
-	return _router
+func RegisterInterceptor(name string, interceptorx interceptor.Interceptor) {
+	_router.handler.RegisterInterceptor(name, interceptorx)
 }
 
-func newRouter() *Router {
-	return &Router{
-		HandlerMapping:  make(map[string]request.Handler, 0),
-		RequestHandlers: make([]request.Handler, 0),
+func UnRegisterInterceptor(name string, interceptorx interceptor.Interceptor) error {
+	return _router.handler.UnRegisterInterceptor(name, interceptorx)
+}
+
+func Route(ctx *fasthttp.RequestCtx) error {
+	ctx.SetContentType(apiconstant.ContentTypeApplicationJSON)
+	ctx.SetStatusCode(fasthttp.StatusOK)
+	rctx := request.NewRequestContext(ctx)
+
+	return _router.route(rctx, ctx)
+}
+
+func newRouter() *router {
+	return &router{
+		handler: dispatcher.NewHandler(),
 	}
 }
